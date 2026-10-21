@@ -1,4 +1,4 @@
-"""網頁版（Pyodide）進入點：供 index.html 呼叫，沿用命令列版的處理流程。
+"""網頁版（Pyodide）進入點：供 index.html 呼叫。
 
 瀏覽器中沒有真實檔案系統，原始檔會先寫入 Pyodide 的虛擬檔案系統，
 各 output 模組照常把檔案存到 OUT_DIR，再由網頁讀出並提供下載。
@@ -10,11 +10,27 @@ import os
 import shutil
 import zipfile
 
-from main import OUTPUT_TYPES, SESSION_CHOICES
+import output_a
+import output_b
+import output_c
+import output_d
 from processing import assign_codes, build_students
 from reader import read_source
 
 OUT_DIR = "/out"
+
+OUTPUT_TYPES = {
+    "1": ("學員整理", "xlsx", output_a),
+    "2": ("學員狀況總覽", "docx", output_b),
+    "3": ("報到及查詢資料", "xlsx", output_c),
+    "4": ("編隊", "xlsx", output_d),
+}
+
+SESSION_CHOICES = {
+    "1": {1},
+    "2": {2},
+    "3": {1, 2},
+}
 
 _state = {}
 
