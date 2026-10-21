@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>報名資料轉換</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --surface: #ffffff;
+    --text: #22201c;
+    --muted: #6b665d;
+    --border: #e2ddd3;
+    --accent: #1f3864;
+    --accent-text: #ffffff;
+    --accent-soft: #e8edf6;
+    --warn-bg: #fff6d6;
+    --warn-text: #6b5300;
+    --error-bg: #fde8e8;
+    --error-text: #8a1f1f;
+    --ok: #2d6a3e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #181715;
+      --surface: #222120;
+      --text: #ece9e3;
+      --muted: #a39e94;
+      --border: #3a3834;
+      --accent: #8fb0e8;
+      --accent-text: #10182a;
+      --accent-soft: #263248;
+      --warn-bg: #3a3214;
+      --warn-text: #f0d98a;
+      --error-bg: #3d1e1e;
+      --error-text: #f2b3b3;
+      --ok: #8fd19e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+    line-height: 1.6;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 24px; }
+  section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  section.disabled { opacity: .5; pointer-events: none; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .step {
+    display: inline-grid; place-items: center;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-text);
+    font-size: .8rem; font-weight: 700;
+  }
+  .drop {
+    display: block;
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop input { display: none; }
+  .drop strong { display: block; margin-bottom: 4px; }
+  .drop small { color: var(--muted); }
+  .status { margin-top: 12px; font-size: .95rem; }
+  .status.ok { color: var(--ok); }
+  .notice { border-radius: 8px; padding: 10px 12px; margin-top: 10px; font-size: .92rem; }
+  .notice.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .notice.error { background: var(--error-bg); color: var(--error-text); white-space: pre-wrap; }
+  fieldset { border: 0; padding: 0; margin: 0 0 16px; }
+  legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+  .options { display: grid; gap: 8px; }
+  .options.types { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .options.sessions { grid-template-columns: repeat(3, 1fr); }
+  .option {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; cursor: pointer;
+  }
+  .option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .option input { margin-top: 5px; accent-color: var(--accent); }
+  .option span small { display: block; color: var(--muted); font-size: .82rem; }
+  label.field { display: block; font-weight: 600; margin-bottom: 6px; }
+  .name-row { display: flex; align-items: center; gap: 6px; }
+  input[type=text] {
+    flex: 1; min-width: 0;
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  }
+  .ext { color: var(--muted); }
+  button {
+    font: inherit; font-weight: 600;
+    background: var(--accent); color: var(--accent-text);
+    border: 0; border-radius: 8px; padding: 10px 20px; margin-top: 16px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: wait; }
+  ul.files { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+  ul.files a {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); text-decoration: none; word-break: break-all;
+  }
+  ul.files a:hover { border-color: var(--accent); background: var(--accent-soft); }
+  ul.files a.zip { font-weight: 600; }
+  ul.files a span:last-child { color: var(--accent); flex-shrink: 0; }
+  footer { color: var(--muted); font-size: .85rem; text-align: center; margin-top: 24px; }
+  @media (max-width: 480px) {
+    .options.sessions { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>報名資料轉換</h1>
+  <p class="lead">上傳原始報名 Excel，產生學員整理、狀況總覽、報到資料與編隊檔案。資料只在本機瀏覽器中處理，不會上傳到任何伺服器。</p>
+
+  <section id="step1">
+    <h2><span class="step">1</span>選擇原始報名檔</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".xls,.xlsx">
+      <strong>點此選擇檔案，或將檔案拖曳到這裡</strong>
+      <small>支援 .xlsx 及網路報名系統匯出的 .xls</small>
+    </label>
+    <div class="status" id="load-status">程式初始化中（第一次開啟約需 10–30 秒）…</div>
+    <div id="load-notices"></div>
+  </section>
+
+  <section id="step2" class="disabled">
+    <h2><span class="step">2</span>選擇要產生的檔案</h2>
+    <fieldset>
+      <legend>檔案類型</legend>
+      <div class="options types">
+        <label class="option"><input type="radio" name="type" value="1" data-name="學員整理" data-ext="xlsx" checked><span>學員整理<small>.xlsx・名單與公告用版面</small></span></label>
+        <label class="option"><input type="radio" name="type" value="2" data-name="學員狀況總覽" data-ext="docx"><span>學員狀況總覽<small>.docx・每位學員一張卡片</small></span></label>
+        <label class="option"><input type="radio" name="type" value="3" data-name="報到及查詢資料" data-ext="xlsx"><span>報到及查詢資料<small>.xlsx・查詢名單與報到單</small></span></label>
+        <label class="option"><input type="radio" name="type" value="4" data-name="編隊" data-ext="xlsx"><span>編隊<small>.xlsx・填編號自動帶出資料</small></span></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>梯次</legend>
+      <div class="options sessions">
+        <label class="option"><input type="radio" name="session" value="1"><span>第一梯</span></label>
+        <label class="option"><input type="radio" name="session" value="2"><span>第二梯</span></label>
+        <label class="option"><input type="radio" name="session" value="3" checked><span>兩梯都要</span></label>
+      </div>
+    </fieldset>
+    <label class="field" for="name">輸出檔名</label>
+    <div class="name-row">
+      <input type="text" id="name" value="學員整理">
+      <span class="ext" id="ext">.xlsx</span>
+    </div>
+    <button id="generate">產生檔案</button>
+    <div id="gen-notices"></div>
+  </section>
+
+  <section id="step3" class="disabled">
+    <h2><span class="step">3</span>下載</h2>
+    <ul class="files" id="files"><li class="status">尚未產生檔案。</li></ul>
+  </section>
+
+  <footer>編號規則、各檔案內容說明請參考專案中的「使用說明.txt」。</footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
+<script>
+  const PY_FILES = [
+    "reader.py", "processing.py", "xlsx_style.py",
+    "output_a.py", "output_b.py", "output_c.py", "output_d.py",
+    "main.py", "web_entry.py",
+  ];
+  const MIME = {
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    zip: "application/zip",
+  };
+
+  const $ = (id) => document.getElementById(id);
+  let objectUrls = [];
+
+  function notice(container, kind, text) {
+    const div = document.createElement("div");
+    div.className = `notice ${kind}`;
+    div.textContent = text;
+    container.appendChild(div);
+  }
+
+  const pyReady = (async () => {
+    const pyodide = await loadPyodide();
+    await pyodide.loadPackage("micropip");
+    await pyodide.pyimport("micropip").install(["openpyxl", "python-docx"]);
+    pyodide.FS.mkdirTree("/app");
+    await Promise.all(PY_FILES.map(async (name) => {
+      const res = await fetch(name, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`無法載入 ${name}（HTTP ${res.status}）`);
+      pyodide.FS.writeFile(`/app/${name}`, await res.text());
+    }));
+    pyodide.runPython("import sys; sys.path.insert(0, '/app')");
+    const entry = pyodide.pyimport("web_entry");
+    return { pyodide, entry };
+  })();
+
+  pyReady.then(
+    () => {
+      if (!$("file").files.length) $("load-status").textContent = "程式已就緒，請選擇原始報名檔。";
+    },
+    (err) => {
+      $("load-status").textContent = "";
+      notice($("load-notices"), "error", `程式初始化失敗，請確認網路連線後重新整理頁面。\n${err}`);
+    },
+  );
+
+  async function loadSource(file) {
+    $("load-notices").innerHTML = "";
+    $("step2").classList.add("disabled");
+    $("load-status").className = "status";
+    $("load-status").textContent = `讀取「${file.name}」中…`;
+    try {
+      const { pyodide, entry } = await pyReady;
+      const ext = file.name.toLowerCase().endsWith(".xlsx") ? ".xlsx" : ".xls";
+      const path = `/in/source${ext}`;
+      pyodide.FS.mkdirTree("/in");
+      pyodide.FS.writeFile(path, new Uint8Array(await file.arrayBuffer()));
+      const info = JSON.parse(entry.load(path));
+      $("load-status").className = "status ok";
+      $("load-status").textContent =
+        `已讀取「${file.name}」：共 ${info.total} 筆原始資料，其中 ${info.recognized} 筆可辨識梯次/性別。`;
+      info.warnings.forEach((w) => notice($("load-notices"), "warn", w));
+      $("step2").classList.remove("disabled");
+    } catch (err) {
+      $("load-status").textContent = "";
+      notice($("load-notices"), "error", `讀取失敗：\n${err.message || err}`);
+    }
+  }
+
+  $("file").addEventListener("change", (e) => {
+    if (e.target.files.length) loadSource(e.target.files[0]);
+  });
+  const drop = $("drop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    if (e.dataTransfer.files.length) loadSource(e.dataTransfer.files[0]);
+  });
+
+  // 切換檔案類型時，若檔名仍是預設值就跟著換成新類型的名稱
+  let lastDefaultName = "學員整理";
+  document.querySelectorAll("input[name=type]").forEach((radio) => {
+    radio.addEventListener("change", () => {
+      const nameInput = $("name");
+      if (nameInput.value.trim() === "" || nameInput.value === lastDefaultName) {
+        nameInput.value = radio.dataset.name;
+      }
+      lastDefaultName = radio.dataset.name;
+      $("ext").textContent = `.${radio.dataset.ext}`;
+    });
+  });
+
+  $("generate").addEventListener("click", async () => {
+    const typeRadio = document.querySelector("input[name=type]:checked");
+    const sessionKey = document.querySelector("input[name=session]:checked").value;
+    const baseName = $("name").value.trim() || typeRadio.dataset.name;
+    const btn = $("generate");
+    $("gen-notices").innerHTML = "";
+    btn.disabled = true;
+    btn.textContent = "產生中…";
+    try {
+      const { pyodide, entry } = await pyReady;
+      const result = JSON.parse(entry.generate(typeRadio.value, sessionKey, baseName));
+      objectUrls.forEach(URL.revokeObjectURL);
+      objectUrls = [];
+      const list = $("files");
+      list.innerHTML = "";
+      const paths = result.zip ? [result.zip, ...result.files] : result.files;
+      for (const path of paths) {
+        const fileName = path.split("/").pop();
+        const ext = fileName.split(".").pop();
+        const blob = new Blob([pyodide.FS.readFile(path)], { type: MIME[ext] });
+        const url = URL.createObjectURL(blob);
+        objectUrls.push(url);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        if (path === result.zip) a.className = "zip";
+        const label = document.createElement("span");
+        label.textContent = path === result.zip ? `全部打包下載（${fileName}）` : fileName;
+        const action = document.createElement("span");
+        action.textContent = "下載";
+        a.append(label, action);
+        const li = document.createElement("li");
+        li.appendChild(a);
+        list.appendChild(li);
+      }
+      $("step3").classList.remove("disabled");
+      $("step3").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      notice($("gen-notices"), "error", `產生失敗：\n${err.message || err}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "產生檔案";
+    }
+  });
+</script>
+</body>
+</html>

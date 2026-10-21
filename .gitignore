@@ -1,0 +1,9 @@
+# 含學員個資的資料檔，切勿上傳到公開的 GitHub
+*.xls
+*.xlsx
+*.docx
+
+# 打包產物
+build/
+dist/
+__pycache__/
