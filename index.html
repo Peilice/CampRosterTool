@@ -80,7 +80,15 @@
   .status.ok { color: var(--ok); }
   .notice { border-radius: 8px; padding: 10px 12px; margin-top: 10px; font-size: .92rem; }
   .notice.warn { background: var(--warn-bg); color: var(--warn-text); }
-  .notice.error { background: var(--error-bg); color: var(--error-text); white-space: pre-wrap; }
+  .notice.error { background: var(--error-bg); color: var(--error-text); }
+  .notice.info { background: var(--accent-soft); color: var(--text); }
+  .notice ul { margin: 6px 0 0; padding-left: 1.4em; max-height: 12em; overflow-y: auto; }
+  .notice details { margin-top: 6px; }
+  .notice summary { cursor: pointer; font-size: .85rem; }
+  .notice pre {
+    margin: 6px 0 0; max-height: 12em; overflow: auto;
+    font-size: .8rem; white-space: pre-wrap; word-break: break-all;
+  }
   fieldset { border: 0; padding: 0; margin: 0 0 16px; }
   legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
   .options { display: grid; gap: 8px; }
@@ -192,11 +200,34 @@
   const $ = (id) => document.getElementById(id);
   let objectUrls = [];
 
-  function notice(container, kind, text) {
+  function notice(container, kind, text, { items = [], detail = "" } = {}) {
     const div = document.createElement("div");
     div.className = `notice ${kind}`;
-    div.textContent = text;
+    div.append(text);
+    if (items.length) {
+      const ul = document.createElement("ul");
+      for (const item of items) {
+        const li = document.createElement("li");
+        li.textContent = item;
+        ul.appendChild(li);
+      }
+      div.appendChild(ul);
+    }
+    if (detail) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "顯示技術細節";
+      const pre = document.createElement("pre");
+      pre.textContent = detail;
+      details.append(summary, pre);
+      div.appendChild(details);
+    }
     container.appendChild(div);
+  }
+
+  // 預期外的錯誤只顯示白話說明，原始錯誤收進技術細節（功能規格 §7.4）
+  function failure(container, text, err) {
+    notice(container, "error", text, { detail: String((err && err.message) || err) });
   }
 
   const pyReady = (async () => {
@@ -220,7 +251,7 @@
     },
     (err) => {
       $("load-status").textContent = "";
-      notice($("load-notices"), "error", `程式初始化失敗，請確認網路連線後重新整理頁面。\n${err}`);
+      failure($("load-notices"), "程式初始化失敗，請確認網路連線正常後重新整理頁面。", err);
     },
   );
 
@@ -236,14 +267,23 @@
       pyodide.FS.mkdirTree("/in");
       pyodide.FS.writeFile(path, new Uint8Array(await file.arrayBuffer()));
       const info = JSON.parse(entry.load(path));
-      $("load-status").className = "status ok";
-      $("load-status").textContent =
-        `已讀取「${file.name}」：共 ${info.total} 筆原始資料，其中 ${info.recognized} 筆可辨識梯次/性別。`;
-      info.warnings.forEach((w) => notice($("load-notices"), "warn", w));
-      $("step2").classList.remove("disabled");
+      if (info.ok) {
+        const counts = Object.entries(info.status_counts).map(([k, n]) => `${k} ${n} 人`);
+        $("load-status").textContent =
+          `已讀取「${file.name}」：共 ${info.total} 筆原始資料，其中 ${info.included} 筆納入報表` +
+          (counts.length ? `（另有${counts.join("、")}）。` : "。");
+      } else if (info.total !== undefined) {
+        $("load-status").textContent = `已讀取「${file.name}」：共 ${info.total} 筆原始資料。`;
+      } else {
+        $("load-status").textContent = "";
+      }
+      if (info.ok) $("load-status").className = "status ok";
+      info.messages.forEach((m) => notice($("load-notices"), m.kind, m.text, { items: m.items }));
+      if (info.ok) $("step2").classList.remove("disabled");
     } catch (err) {
       $("load-status").textContent = "";
-      notice($("load-notices"), "error", `讀取失敗：\n${err.message || err}`);
+      failure($("load-notices"),
+        "無法讀取這個檔案。請確認是報名系統匯出的原始檔，或用 Excel 另存成 .xlsx 後再試一次。", err);
     }
   }
 
@@ -307,10 +347,12 @@
         li.appendChild(a);
         list.appendChild(li);
       }
+      result.notices.forEach((text) => notice($("gen-notices"), "info", text));
       $("step3").classList.remove("disabled");
       $("step3").scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (err) {
-      notice($("gen-notices"), "error", `產生失敗：\n${err.message || err}`);
+      failure($("gen-notices"),
+        "產生檔案時發生問題。請重新選擇原始檔後再試一次；若仍然失敗，請展開技術細節回報。", err);
     } finally {
       btn.disabled = false;
       btn.textContent = "產生檔案";

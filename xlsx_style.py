@@ -7,6 +7,9 @@ HEADER_FONT = Font(color="FFFFFFFF", bold=True)
 # 編號與實際梯次/性別欄位衝突時的警示底色，提示人工核對。
 CONFLICT_FILL = PatternFill("solid", fgColor="FFFFFF00")
 
+# 梯次、性別或來源無法辨識而未納入報表的資料列底色。
+UNRECOGNIZED_FILL = PatternFill("solid", fgColor="FFFFC000")
+
 
 def style_header_row(ws, row, col_count):
     """將指定列設為表頭樣式：深色底、白色字體。"""

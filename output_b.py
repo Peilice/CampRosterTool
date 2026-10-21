@@ -82,7 +82,7 @@ def _write_group(doc, students):
 
 
 def build(students_all, sessions_wanted, folder, base_name):
-    """學員狀況總覽：依梯次、性別各自產生獨立檔案。"""
+    """學員狀況總覽：依梯次、性別各自產生獨立檔案；沒有學員的組別不產生。"""
     students = students_all["students"]
     groups = group_students(students, sessions_wanted)
 
@@ -91,6 +91,8 @@ def build(students_all, sessions_wanted, folder, base_name):
         label = SESSION_LABEL[session]
         for gender in ("男", "女"):
             group = groups.get((session, gender), [])
+            if not group:
+                continue
 
             doc = docx.Document()
             _set_narrow_margins(doc.sections[0])

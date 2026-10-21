@@ -39,6 +39,15 @@ HEADER_ALIASES = {
 
 _LEADING_NUM_RE = re.compile(r"^\d+[.．]\s*")
 
+NO_HEADER_MESSAGE = (
+    "在檔案中找不到報名資料。請確認上傳的是報名系統匯出的原始檔，"
+    "且資料表包含「學員姓名」、「身分證字號」、「參加梯次」、「性別」這幾欄。"
+)
+
+
+class SourceFormatError(ValueError):
+    """原始檔格式不符，訊息可直接顯示給使用者。"""
+
 
 def _normalize_header_cell(text):
     text = (text or "").strip()
@@ -46,8 +55,10 @@ def _normalize_header_cell(text):
     return HEADER_ALIASES.get(text, text)
 
 
-def _extract_blocks(all_rows):
+def _extract_blocks(all_rows, row_nos):
     """掃描整份工作表（list[list[str]]），找出所有表頭列並合併各區塊資料。
+
+    row_nos 為 all_rows 各列在工作表中的列號（與 Excel 左側列號相同）。
 
     表頭列以「去除數字編號、套用欄位別名後，是否涵蓋 REQUIRED_HEADERS」判斷。
     沒有「項次」欄的表頭（例如另一份 Google 表單格式），視為已依編號規則
@@ -64,6 +75,7 @@ def _extract_blocks(all_rows):
         return None
 
     rows = []
+    out_row_nos = []
     for block_idx, (start, normalized_header) in enumerate(header_positions):
         end = (
             header_positions[block_idx + 1][0]
@@ -71,7 +83,7 @@ def _extract_blocks(all_rows):
             else len(all_rows)
         )
         is_native = "項次" in normalized_header
-        for row in all_rows[start + 1:end]:
+        for row, row_no in zip(all_rows[start + 1:end], row_nos[start + 1:end]):
             if all((v or "").strip() == "" for v in row):
                 continue
             raw = dict(zip(normalized_header, row))
@@ -83,7 +95,8 @@ def _extract_blocks(all_rows):
             elif not (raw.get("來源") or "").strip():
                 raw["來源"] = "網路報名"
             rows.append([raw.get(col, "") for col in CANONICAL_HEADER])
-    return CANONICAL_HEADER, rows
+            out_row_nos.append(row_no)
+    return CANONICAL_HEADER, rows, out_row_nos
 
 
 def _rows_from_xlsx(path):
@@ -93,10 +106,10 @@ def _rows_from_xlsx(path):
             ["" if v is None else str(v) for v in row]
             for row in ws.iter_rows(values_only=True)
         ]
-        result = _extract_blocks(all_rows)
+        result = _extract_blocks(all_rows, list(range(1, len(all_rows) + 1)))
         if result is not None:
             return result
-    raise ValueError("在 Excel 檔中找不到符合預期欄位（學員姓名、身分證字號、參加梯次、性別）的工作表")
+    raise SourceFormatError(NO_HEADER_MESSAGE)
 
 
 def _rows_from_spreadsheetml(path):
@@ -126,15 +139,25 @@ def _rows_from_spreadsheetml(path):
                 next_index += 1
             return values
 
-        all_rows = [read_row(row_xml) for row_xml in rows_xml]
-        result = _extract_blocks(all_rows)
+        # <Row> 可用 ss:Index 跳過空白列，列號需依此累計
+        all_rows = []
+        row_nos = []
+        next_row_no = 1
+        for row_xml in rows_xml:
+            idx_attr = row_xml.get("{urn:schemas-microsoft-com:office:spreadsheet}Index")
+            if idx_attr is not None:
+                next_row_no = int(idx_attr)
+            all_rows.append(read_row(row_xml))
+            row_nos.append(next_row_no)
+            next_row_no += 1
+        result = _extract_blocks(all_rows, row_nos)
         if result is not None:
             return result
-    raise ValueError("在 Excel 檔中找不到符合預期欄位（學員姓名、身分證字號、參加梯次、性別）的工作表")
+    raise SourceFormatError(NO_HEADER_MESSAGE)
 
 
 def read_source(path):
-    """回傳 (header: list[str], rows: list[list[str]])"""
+    """回傳 (header: list[str], rows: list[list[str]], row_nos: list[int])"""
     if path.lower().endswith(".xlsx"):
         return _rows_from_xlsx(path)
 

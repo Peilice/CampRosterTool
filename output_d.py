@@ -5,7 +5,7 @@ import openpyxl
 from openpyxl.styles import Border, PatternFill, Side
 from openpyxl.formatting.rule import FormulaRule
 
-from processing import SESSION_LABEL, group_students
+from processing import SESSION_LABEL, clean_note, group_students
 from xlsx_style import style_header_row
 
 SLOTS_PER_TEAM = 8
@@ -26,7 +26,7 @@ TEAM_NAMES = {
     ],
 }
 
-RAW_HEADERS = ["編號", "學員姓名", "出生年月日", "身分證字號", "管理者註記事項"]
+RAW_HEADERS = ["編號", "學員姓名", "出生年月日", "身分證字號", "管理者註記事項", "學員特殊狀況說明"]
 
 INPUT_FILL = PatternFill("solid", fgColor="FFCFE2F3")
 DUPLICATE_FILL = PatternFill(start_color="FFFFC7CE", end_color="FFFFC7CE", fill_type="solid")
@@ -57,7 +57,8 @@ def _write_raw_sheet(wb, sheet_name, students):
     for s in students:
         ws.append([
             s.code, s.get("學員姓名"), s.birth_ymd,
-            s.get("身分證字號"), s.get("管理者註記事項"),
+            s.get("身分證字號"), clean_note(s.get("管理者註記事項")),
+            clean_note(s.get("學員特殊狀況說明")),
         ])
 
 
@@ -85,10 +86,14 @@ def _write_formation_sheet(wb, sheet_name, gender, team_name_sheet, raw_sheet_na
             d_cell.fill = INPUT_FILL
             d_cell.number_format = "@"
             ws.cell(row=row, column=5,
-                    value=f"=IFERROR(VLOOKUP(D{row},'{raw_sheet_name}'!A:E,2,FALSE),\"\")")
-            note_lookup = f"VLOOKUP(D{row},'{raw_sheet_name}'!A:E,5,FALSE)"
+                    value=f"=IFERROR(VLOOKUP(D{row},'{raw_sheet_name}'!A:F,2,FALSE),\"\")")
+            # 注意事項 =「學員特殊狀況說明；管理者註記事項」，任一方空白就只顯示另一方
+            # （VLOOKUP(...)&"" 讓空白儲存格得到空字串而不是 0）
+            special = f"VLOOKUP(D{row},'{raw_sheet_name}'!A:F,6,FALSE)&\"\""
+            note = f"VLOOKUP(D{row},'{raw_sheet_name}'!A:F,5,FALSE)&\"\""
             ws.cell(row=row, column=6,
-                    value=f"=IFERROR(IF({note_lookup}=0,\"\",{note_lookup}),\"\")")
+                    value=f"=IFERROR(IF(AND({special}<>\"\",{note}<>\"\"),"
+                          f"{special}&\"；\"&{note},{special}&{note}),\"\")")
             row += 1
         end_row = row - 1
 

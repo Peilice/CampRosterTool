@@ -5,13 +5,13 @@ import openpyxl
 from openpyxl.styles import Border, PatternFill, Side
 
 from processing import (
-    SESSION_LABEL, group_students, mask_id, mask_name,
+    ADMITTED, SESSION_LABEL, clean_note, group_students, mask_id, mask_name,
 )
-from xlsx_style import CONFLICT_FILL, style_header_row
+from xlsx_style import CONFLICT_FILL, UNRECOGNIZED_FILL, style_header_row
 
 DROP_COLUMNS = {"縣市", "郵遞區號"}
 
-LIST_HEADERS = ["編號", "項次", "學員姓名", "出生年月日", "身分證字號", "管理者註記事項"]
+LIST_HEADERS = ["編號", "項次", "學員姓名", "出生年月日", "身分證字號", "管理者註記事項", "狀態"]
 
 BLOCK_WIDTH = 4  # 編號 / 姓名 / 身分證字號 / 空白
 
@@ -30,7 +30,7 @@ GRID_BORDER = Border(
 )
 
 
-def _write_raw_sheet(wb, header, rows, conflict_rows):
+def _write_raw_sheet(wb, header, rows, unrecognized_rows, conflict_rows):
     ws = wb.active
     ws.title = "原檔"
     kept_headers = [h for h in header if h not in DROP_COLUMNS]
@@ -40,9 +40,10 @@ def _write_raw_sheet(wb, header, rows, conflict_rows):
         raw = dict(zip(header, row))
         row_i = i + 2
         ws.append([raw.get(h, "") for h in kept_headers])
-        if i in conflict_rows:
+        fill = CONFLICT_FILL if i in conflict_rows else UNRECOGNIZED_FILL if i in unrecognized_rows else None
+        if fill:
             for col in range(1, len(kept_headers) + 1):
-                ws.cell(row=row_i, column=col).fill = CONFLICT_FILL
+                ws.cell(row=row_i, column=col).fill = fill
 
 
 def _write_list_sheet(wb, sheet_name, students):
@@ -52,7 +53,8 @@ def _write_list_sheet(wb, sheet_name, students):
     for s in students:
         ws.append([
             s.code, s.get("項次"), s.get("學員姓名"), s.birth_ymd,
-            s.get("身分證字號"), s.get("管理者註記事項"),
+            s.get("身分證字號"), clean_note(s.get("管理者註記事項")),
+            "" if s.status == ADMITTED else s.status,
         ])
 
 
@@ -83,11 +85,13 @@ def build(students_all, sessions_wanted, folder, base_name):
     header = students_all["header"]
     rows = students_all["rows"]
     students = students_all["students"]
-    conflict_rows = students_all["conflict_rows"]
 
     wb = openpyxl.Workbook()
-    _write_raw_sheet(wb, header, rows, conflict_rows)
+    _write_raw_sheet(
+        wb, header, rows, students_all["unrecognized_rows"], students_all["conflict_rows"],
+    )
 
+    list_groups = group_students(students, sessions_wanted, reportable_only=False)
     groups = group_students(students, sessions_wanted)
     for session in sorted(sessions_wanted):
         label = SESSION_LABEL[session]
@@ -99,7 +103,7 @@ def build(students_all, sessions_wanted, folder, base_name):
             title = f"第{label}梯次({gender_tag})"
             fill_color = GRID_FILL_COLOR[(session, gender)]
 
-            _write_list_sheet(wb, list_name, group)
+            _write_list_sheet(wb, list_name, list_groups.get((session, gender), []))
             _write_grid_sheet(wb, grid_name, title, group, masked=False, fill_color=fill_color)
             _write_grid_sheet(wb, public_name, title, group, masked=True, fill_color=fill_color)
 
