@@ -1,8 +1,8 @@
 """讀取原始報名 Excel 檔（支援 .xlsx 及 SpreadsheetML 格式的 .xls）。
 
-同一分頁內可能同時存在多組表頭不同的資料區塊（例如網路報名原始表 +
-另一份 Google 表單匯出的現場報名補登資料），本模組會逐列掃描找出每個
-表頭列，將各區塊資料統一轉換成標準 26 欄格式後再合併回傳。
+同一分頁內可能同時存在多組表頭不同的資料區塊（網路報名系統匯出的資料 +
+Google 表單匯出的現場報名資料），本模組會逐列掃描找出每個表頭列，
+將各區塊資料統一轉換成標準欄位後再合併回傳。
 """
 import re
 import xml.etree.ElementTree as ET
@@ -21,8 +21,10 @@ CANONICAL_HEADER = [
     "緊急連絡人姓名", "緊急連絡人電話", "緊急連絡人與學員關係",
     "學童健康狀況（風險評估）()", "學員特殊狀況說明",
     "活動中，如有身體不適或意外，當下聯繫不上家長時：", "管理者註記事項",
-    "現場原始編號",
 ]
+
+# 現場報名（Google 表單）匯出檔才有的欄位，用來區分來源（功能規格 §3.4）
+ONSITE_MARKER_HEADER = "時間戳記"
 
 # 部分報名表單（如 Google 表單匯出）欄位名稱與標準欄位不同，需要對應轉換。
 # key 為去除開頭數字編號、前後空白後的欄位文字；value 為對應的標準欄位名稱。
@@ -61,10 +63,8 @@ def _extract_blocks(all_rows, row_nos):
     row_nos 為 all_rows 各列在工作表中的列號（與 Excel 左側列號相同）。
 
     表頭列以「去除數字編號、套用欄位別名後，是否涵蓋 REQUIRED_HEADERS」判斷。
-    沒有「項次」欄的表頭（例如另一份 Google 表單格式），視為已依編號規則
-    完成編號的補登資料：以「編號」欄位去除類別前綴後的流水號作為「項次」，
-    並強制標記「來源」為現場報名；找不到對應的欄位（如家長姓名、EMAIL）則留空。
-    有「項次」欄的原生表頭區塊，若「來源」欄空白，預設視為網路報名。
+    來源依表頭格式決定：有「時間戳記」欄的是現場報名，其餘是網路報名。
+    找不到對應的欄位（如現場報名沒有家長姓名、EMAIL）則留空。
     """
     header_positions = []
     for i, row in enumerate(all_rows):
@@ -82,18 +82,12 @@ def _extract_blocks(all_rows, row_nos):
             if block_idx + 1 < len(header_positions)
             else len(all_rows)
         )
-        is_native = "項次" in normalized_header
+        source = "現場報名" if ONSITE_MARKER_HEADER in normalized_header else "網路報名"
         for row, row_no in zip(all_rows[start + 1:end], row_nos[start + 1:end]):
             if all((v or "").strip() == "" for v in row):
                 continue
             raw = dict(zip(normalized_header, row))
-            if not is_native:
-                code = (raw.get("編號") or "").strip()
-                raw["項次"] = code[1:] if len(code) > 1 else code
-                raw["來源"] = "現場報名"
-                raw["現場原始編號"] = code
-            elif not (raw.get("來源") or "").strip():
-                raw["來源"] = "網路報名"
+            raw["來源"] = source
             rows.append([raw.get(col, "") for col in CANONICAL_HEADER])
             out_row_nos.append(row_no)
     return CANONICAL_HEADER, rows, out_row_nos

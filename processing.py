@@ -167,14 +167,19 @@ def _normalize_birth(raw):
     return True
 
 
-def _has_code_conflict(raw, session, gender):
-    """判斷「現場原始編號」（已完成編號的補登資料）的類別前綴，
-    是否與依實際性別/梯次欄位算出的前綴不符。"""
-    preassigned = (raw.get("現場原始編號") or "").strip()
-    if not preassigned:
-        return False
-    prefix = SESSION_PREFIX.get((session, gender))
-    return prefix is not None and not preassigned.startswith(prefix)
+def _onsite_code(raw):
+    """現場報名的項次即為 6 碼完整編號；格式不符時回傳 None。
+
+    試算表常把 000012 這類編號當成數字而去掉開頭的 0，不到 6 位時補回。
+    """
+    item = (raw.get("項次") or "").strip()
+    return item.zfill(6) if re.fullmatch(r"\d{1,6}", item) else None
+
+
+def _has_code_conflict(raw, session, gender, source_type):
+    """判斷現場報名編號的組別碼（第 1 碼）是否與實際梯次、性別不符。"""
+    code = _onsite_code(raw) if source_type == "現場" else None
+    return code is not None and not code.startswith(SESSION_PREFIX[(session, gender)])
 
 
 def _unrecognized_reason(raw, session, gender, source_type):
@@ -184,9 +189,6 @@ def _unrecognized_reason(raw, session, gender, source_type):
         reasons.append(f"參加梯次「{value}」無法辨識" if value else "參加梯次空白")
     if gender not in ("男", "女"):
         reasons.append(f"性別「{gender}」無法辨識" if gender else "性別空白")
-    if source_type is None:
-        value = raw.get("來源", "").strip()
-        reasons.append(f"來源「{value}」無法辨識" if value else "來源空白")
     return "、".join(reasons)
 
 
@@ -241,7 +243,7 @@ def build_students(header, rows, row_nos):
         "unrecognized": [], "conflict": [], "duplicate_id": [], "bad_birth": [],
         "promote_not_waitlisted": [], "onsite_over_50": [],
     }
-    blockers = {"missing_onsite_no": [], "duplicate_onsite_no": [], "duplicate_promote_n": []}
+    blockers = {"invalid_onsite_no": [], "duplicate_onsite_no": [], "duplicate_promote_n": []}
 
     for i, (row, row_no) in enumerate(zip(rows, row_nos)):
         raw = dict(zip(header, row))
@@ -249,16 +251,15 @@ def build_students(header, rows, row_nos):
         gender = raw.get("性別", "").strip()
         source_type = detect_source_type(raw.get("來源", ""))
         name = raw.get("學員姓名", "").strip()
-        if session is None or gender not in ("男", "女") or source_type is None:
+        if session is None or gender not in ("男", "女"):
             unrecognized_rows.add(i)
             reason = _unrecognized_reason(raw, session, gender, source_type)
             issues["unrecognized"].append(f"第 {row_no} 列 {name}：{reason}")
             continue
-        if _has_code_conflict(raw, session, gender):
+        if _has_code_conflict(raw, session, gender, source_type):
             conflict_rows.add(i)
-            code = raw.get("現場原始編號", "").strip()
             issues["conflict"].append(
-                f"第 {row_no} 列 {name}：現場原始編號 {code} 與{group_label(session, gender)}不符"
+                f"第 {row_no} 列 {name}：編號 {_onsite_code(raw)} 與{group_label(session, gender)}不符"
             )
             continue
         birth_text = "/".join(
@@ -272,11 +273,13 @@ def build_students(header, rows, row_nos):
 
     onsite = [s for s in students if s.source_type == "現場"]
     for s in onsite:
-        if _item_no(s) is None:
-            blockers["missing_onsite_no"].append(s.label)
-    for group in _find_duplicates(onsite, lambda s: (s.prefix, _item_no(s)) if _item_no(s) is not None else None):
+        if _onsite_code(s.raw) is None:
+            item = s.get("項次").strip()
+            reason = f"項次「{item}」不是 6 碼完整編號" if item else "項次空白"
+            blockers["invalid_onsite_no"].append(f"{s.label}：{reason}")
+    for group in _find_duplicates(onsite, lambda s: _onsite_code(s.raw)):
         blockers["duplicate_onsite_no"].append(
-            "、".join(s.label for s in group) + f"：現場號碼都是 {_item_no(group[0])}"
+            "、".join(s.label for s in group) + f"：編號都是 {_onsite_code(group[0].raw)}"
         )
     for group in _find_duplicates(students, lambda s: (s.prefix, s.promote_n) if s.promote_n else None):
         blockers["duplicate_promote_n"].append(
@@ -301,7 +304,7 @@ def build_students(header, rows, row_nos):
 def assign_codes(result):
     """依功能規格 §5 編號並排序 result["students"]。
 
-    須在 blockers 皆為空時呼叫（現場號碼齊全且不重複、轉正 N 不重複）。
+    須在 blockers 皆為空時呼叫（現場編號齊全且不重複、轉正 N 不重複）。
     """
     students = result["students"]
     buckets = {}
@@ -313,9 +316,8 @@ def assign_codes(result):
             for s in group:
                 if s.waitlisted and not s.promote_n:
                     continue
-                s.seq = _item_no(s)
-                preassigned = s.get("現場原始編號").strip()
-                s.code = preassigned if preassigned else prefix + str(s.seq).zfill(5)
+                s.code = _onsite_code(s.raw)
+                s.seq = int(s.code[1:])
         else:
             regular = sorted((s for s in group if not s.waitlisted), key=_sort_item_no)
             promoted = sorted((s for s in group if s.promote_n), key=lambda s: s.promote_n)
