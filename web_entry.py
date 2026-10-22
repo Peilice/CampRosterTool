@@ -13,6 +13,7 @@ import output_a
 import output_b
 import output_c
 import output_d
+import output_e
 from processing import (
     CANCELLED, PROMOTED, WAITLISTED, assign_codes, build_students, group_label, group_students,
 )
@@ -25,6 +26,7 @@ OUTPUT_TYPES = {
     "2": ("學員狀況總覽", "docx", output_b),
     "3": ("報到及查詢資料", "xlsx", output_c),
     "4": ("編隊", "xlsx", output_d),
+    "5": ("公告", "png", output_e),
 }
 
 SESSION_CHOICES = {
@@ -127,7 +129,7 @@ def generate(type_key, session_key, base_name):
     out_paths = module.build(students_all, sessions_wanted, OUT_DIR, base_name)
 
     notices = []
-    if module is output_b:
+    if module in (output_b, output_e):
         groups = group_students(students_all["students"], sessions_wanted)
         for session in sorted(sessions_wanted):
             for gender in ("男", "女"):

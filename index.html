@@ -220,10 +220,11 @@
     <fieldset>
       <legend>檔案類型</legend>
       <div class="options types">
-        <label class="option"><input type="radio" name="type" value="1" data-name="學員整理" data-ext="xlsx" checked><span>學員整理<small>.xlsx・名單與公告用版面</small></span></label>
+        <label class="option"><input type="radio" name="type" value="1" data-name="學員整理" data-ext="xlsx" checked><span>學員整理<small>.xlsx・名單與網格版面</small></span></label>
         <label class="option"><input type="radio" name="type" value="2" data-name="學員狀況總覽" data-ext="docx"><span>學員狀況總覽<small>.docx・每位學員一張卡片</small></span></label>
         <label class="option"><input type="radio" name="type" value="3" data-name="報到及查詢資料" data-ext="xlsx"><span>報到及查詢資料<small>.xlsx・查詢名單與報到單</small></span></label>
         <label class="option"><input type="radio" name="type" value="4" data-name="編隊" data-ext="xlsx"><span>編隊<small>.xlsx・填編號自動帶出資料</small></span></label>
+        <label class="option"><input type="radio" name="type" value="5" data-name="公告" data-ext="png"><span>公告<small>.png・遮蔽個資的錄取名單圖片</small></span></label>
       </div>
     </fieldset>
     <fieldset>
@@ -255,14 +256,19 @@
 <script>
   const PY_FILES = [
     "reader.py", "processing.py", "xlsx_style.py",
-    "output_a.py", "output_b.py", "output_c.py", "output_d.py",
+    "output_a.py", "output_b.py", "output_c.py", "output_d.py", "output_e.py",
     "web_entry.py",
   ];
   const MIME = {
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    png: "image/png",
     zip: "application/zip",
   };
+  // 公告圖片用的中文字型（約 5.7 MB），第一次產生公告時才下載
+  const FONT_URL = "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@Sans2.004/Sans/SubsetOTF/TC/NotoSansTC-Regular.otf";
+  const FONT_PATH = "/app/NotoSansTC-Regular.otf";
+  let fontReady = null;
 
   const $ = (id) => document.getElementById(id);
   let objectUrls = [];
@@ -299,7 +305,7 @@
 
   const pyReady = (async () => {
     const pyodide = await loadPyodide();
-    await pyodide.loadPackage("micropip");
+    await pyodide.loadPackage(["micropip", "pillow"]);
     await pyodide.pyimport("micropip").install(["openpyxl", "python-docx"]);
     pyodide.FS.mkdirTree("/app");
     await Promise.all(PY_FILES.map(async (name) => {
@@ -389,6 +395,15 @@
     btn.textContent = "產生中…";
     try {
       const { pyodide, entry } = await pyReady;
+      if (typeRadio.dataset.ext === "png") {
+        btn.textContent = "下載字型中…";
+        fontReady ??= fetch(FONT_URL).then(async (res) => {
+          if (!res.ok) throw new Error(`無法下載字型（HTTP ${res.status}）`);
+          pyodide.FS.writeFile(FONT_PATH, new Uint8Array(await res.arrayBuffer()));
+        });
+        await fontReady.catch((err) => { fontReady = null; throw err; });
+        btn.textContent = "產生中…";
+      }
       const result = JSON.parse(entry.generate(typeRadio.value, sessionKey, baseName));
       objectUrls.forEach(URL.revokeObjectURL);
       objectUrls = [];

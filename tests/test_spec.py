@@ -10,11 +10,13 @@ import unittest
 
 import docx
 import openpyxl
+from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import output_a  # noqa: E402
 import output_d  # noqa: E402
+import output_e  # noqa: E402
 import processing as P  # noqa: E402
 import web_entry  # noqa: E402
 from reader import read_source  # noqa: E402
@@ -32,6 +34,14 @@ ONSITE_HEADER = [
 S1 = "第一梯次：暑假後升國小五年級-國中二年級"
 S1_WAIT = S1 + "(候補)"
 S2 = "第二梯次(國曆7月22日~26日)"
+
+# 公告圖片需要中文字型；網頁版會另外下載，本機測試借用系統字型
+CJK_FONTS = [
+    r"C:\Windows\Fonts\msjh.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+]
+CJK_FONT = next((f for f in CJK_FONTS if os.path.exists(f)), None)
 
 
 def web(item="1", name="王小明", gender="男", birth=("104", "5", "6"), id_no=None,
@@ -296,11 +306,26 @@ class ReportTest(SpecTestCase):
         wb = openpyxl.load_workbook(path)
         listed = [(r[2], r[6]) for r in wb["第一梯-男"].iter_rows(min_row=2, values_only=True)]
         self.assertEqual(listed, [("正取生", None), ("取消生", "取消"), ("候補生", "候補")])
-        public_names = [c.value for c in wb["一公(男)"]["B"] if c.value]
-        self.assertEqual(public_names, ["正○生"])
+        grid_names = [c.value for c in wb["第一(男)"]["B"] if c.value]
+        self.assertEqual(grid_names, ["正取生"])
+        self.assertNotIn("一公(男)", wb.sheetnames)  # 公告改為獨立的圖片檔
         raw = wb["原檔"]
         self.assertEqual(raw.cell(row=5, column=1).fill.fgColor.rgb, "FFFFC000")  # 未辨識標橘色
         self.assertEqual(raw.cell(row=2, column=1).value, "網路報名")  # 來源依格式填入
+
+    @unittest.skipUnless(CJK_FONT, "找不到中文字型")
+    def test_public_notice_image_per_group(self):
+        output_e.FONT_PATH = CJK_FONT
+        data = self.process(
+            [web(name=f"網路{i}", item=str(i)) for i in range(1, 52)]
+            + [web(name="候補生", item="99", session=S1_WAIT), web(name="女生", item="100", gender="女")]
+        )
+        paths = output_e.build(data, {1, 2}, self.tmp, "公告")
+        self.assertEqual(
+            [os.path.basename(p) for p in paths], ["公告_第一梯_男.png", "公告_第一梯_女.png"],
+        )
+        with Image.open(paths[0]) as two_blocks, Image.open(paths[1]) as one_block:
+            self.assertGreater(two_blocks.width, one_block.width)  # 51 人分成 2 個區塊
 
     def test_formation_notes_combine_both_fields(self):
         data = self.process([

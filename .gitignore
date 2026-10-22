@@ -2,6 +2,7 @@
 *.xls
 *.xlsx
 *.docx
+*.png
 
 # 打包產物
 build/
